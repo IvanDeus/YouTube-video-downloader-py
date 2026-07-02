@@ -62,7 +62,7 @@ If you prefer, you can install `yt-dlp` and `ffmpeg` globally and add them to yo
 
 ## 💻 Usage
 
-1. **Run the Application** click on it or type in terminal:
+1. **Run the Application!** Click on it or type in a terminal:
    ```bash
    python yt_downloader_gui.py
    ```
