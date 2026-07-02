@@ -1,3 +1,5 @@
+# yt_downloader_gui.py
+# 2026 [ ivan deus ]
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import subprocess
