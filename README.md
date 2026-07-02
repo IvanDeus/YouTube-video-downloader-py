@@ -24,7 +24,7 @@ A user-friendly, graphical desktop application for downloading and merging YouTu
 
 Before running the application, ensure you have the following:
 
-1. **Python 3.14+** (No external Python packages are required; it uses built-in `tkinter`).
+1. **[Python 3.14+](https://www.python.org/downloads/)** (No external Python packages are required; it uses built-in `tkinter`).
 2. **[yt-dlp](https://github.com/yt-dlp/yt-dlp)**: The core engine for downloading.
 3. **[FFmpeg](https://ffmpeg.org/)**: Required for merging separate video and audio streams.
 
