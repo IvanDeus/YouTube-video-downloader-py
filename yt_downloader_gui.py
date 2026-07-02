@@ -21,6 +21,9 @@ class YTDownloaderApp:
         self.current_process = None
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
+        # Store the video title
+        self.video_title = "YouTube_Video"
+        
         # Auto-detect executable paths
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.ytdlp_path = os.path.join(script_dir, "yt-dlp.exe")
@@ -144,6 +147,14 @@ class YTDownloaderApp:
     def update_status(self, text):
         self.root.after(0, lambda: self.status_var.set(text))
 
+    def sanitize_filename(self, filename):
+        """Removes illegal characters and truncates the filename for safety."""
+        # Remove characters that are invalid in Windows/Linux/macOS filenames
+        clean_name = re.sub(r'[\\/*?:"<>|]', "", filename).strip()
+        # Truncate to 100 characters to prevent path length issues
+        clean_name = clean_name[:100] if clean_name else "YouTube_Video"
+        return clean_name
+
     def fetch_formats(self):
         url = self.url_entry.get().strip()
         if not url:
@@ -156,7 +167,6 @@ class YTDownloaderApp:
         
         def run_fetch():
             try:
-                # Use JSON dump for easy parsing, suppress warnings to keep log clean
                 cmd = [self.ytdlp_path, "--dump-single-json", "--no-playlist", "--no-warnings", url]
                 result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
                 
@@ -166,9 +176,12 @@ class YTDownloaderApp:
                     return
 
                 data = json.loads(result.stdout)
-                formats = data.get('formats', [])
                 
-                # Filter for formats that actually have video
+                # --- EXTRACT TITLE HERE ---
+                self.video_title = data.get('title', 'YouTube_Video')
+                self.log(f"Video Title: {self.video_title}")
+                
+                formats = data.get('formats', [])
                 video_formats = [f for f in formats if f.get('vcodec') != 'none']
                 self.root.after(0, self.populate_formats, video_formats)
                 
@@ -191,7 +204,6 @@ class YTDownloaderApp:
             self.update_status("No formats found.")
             return
             
-        # Sort by resolution height (descending)
         formats.sort(key=lambda x: x.get('height', 0) or 0, reverse=True)
         
         for f in formats:
@@ -224,14 +236,16 @@ class YTDownloaderApp:
         url = self.url_entry.get().strip()
         out_dir = self.out_dir.get()
         
-        # Use templates so yt-dlp can choose the correct extension
-        video_path_template = os.path.join(out_dir, "video_temp.%(ext)s")
-        audio_path_template = os.path.join(out_dir, "audio_temp.%(ext)s")
-        final_path = os.path.join(out_dir, "final_video.mp4")
+        # --- USE SANITIZED TITLE FOR FILENAME ---
+        safe_title = self.sanitize_filename(self.video_title)
         
-        # Clean up old temp files
-        for p in glob.glob(os.path.join(out_dir, "video_temp.*")) + \
-                 glob.glob(os.path.join(out_dir, "audio_temp.*")) + \
+        video_path_template = os.path.join(out_dir, f"{safe_title}_video_temp.%(ext)s")
+        audio_path_template = os.path.join(out_dir, f"{safe_title}_audio_temp.%(ext)s")
+        final_path = os.path.join(out_dir, f"{safe_title}.mp4")
+        
+        # Clean up old temp files for this specific video
+        for p in glob.glob(os.path.join(out_dir, f"{safe_title}_video_temp.*")) + \
+                 glob.glob(os.path.join(out_dir, f"{safe_title}_audio_temp.*")) + \
                  [final_path]:
             if os.path.exists(p):
                 try: os.remove(p)
@@ -248,7 +262,8 @@ class YTDownloaderApp:
                 if has_audio:
                     self.update_status("Downloading video with audio...")
                     self.log(f"Selected format {format_id} has audio. Downloading directly...")
-                    cmd = [self.ytdlp_path, "-f", format_id, "-o", final_path, "--no-warnings", url]
+                    # Added --merge-output-format mp4 to ensure it saves as .mp4
+                    cmd = [self.ytdlp_path, "-f", format_id, "-o", final_path, "--merge-output-format", "mp4", "--no-warnings", url]
                     self.run_command(cmd, is_download=True)
                 else:
                     self.update_status("Downloading video...")
@@ -256,17 +271,17 @@ class YTDownloaderApp:
                     cmd_v = [self.ytdlp_path, "-f", format_id, "-o", video_path_template, "--no-warnings", url]
                     self.run_command(cmd_v, is_download=True)
                     
-                    video_files = glob.glob(os.path.join(out_dir, "video_temp.*"))
+                    video_files = glob.glob(os.path.join(out_dir, f"{safe_title}_video_temp.*"))
                     if not video_files: raise Exception("Video download failed, file not found.")
                     video_path = video_files[0]
                     
                     self.update_status("Downloading audio...")
-                    self.progress['value'] = 0 # Reset for audio
+                    self.progress['value'] = 0 
                     self.log("Downloading audio (format 140/bestaudio)...")
                     cmd_a = [self.ytdlp_path, "-f", "140/bestaudio", "-o", audio_path_template, "--no-warnings", url]
                     self.run_command(cmd_a, is_download=True)
                     
-                    audio_files = glob.glob(os.path.join(out_dir, "audio_temp.*"))
+                    audio_files = glob.glob(os.path.join(out_dir, f"{safe_title}_audio_temp.*"))
                     if not audio_files: raise Exception("Audio download failed, file not found.")
                     audio_path = audio_files[0]
                     
@@ -310,7 +325,7 @@ class YTDownloaderApp:
             cmd, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.STDOUT, 
-            text=False, # Handle decoding manually for real-time reading
+            text=False, 
             bufsize=0
         )
         self.current_process = process
@@ -318,7 +333,6 @@ class YTDownloaderApp:
         buffer = ""
         while True:
             try:
-                # Read raw bytes to avoid blocking on line-endings
                 chunk = os.read(process.stdout.fileno(), 4096)
                 if not chunk:
                     if process.poll() is not None: break
@@ -327,7 +341,6 @@ class YTDownloaderApp:
             except OSError:
                 break
                 
-            # Process buffer line-by-line (handling both \r and \n)
             while '\r' in buffer or '\n' in buffer:
                 idx_r = buffer.find('\r')
                 idx_n = buffer.find('\n')
@@ -343,7 +356,6 @@ class YTDownloaderApp:
                     
                 line = line.strip()
                 if line:
-                    # Parse yt-dlp progress
                     if is_download and "[download]" in line:
                         match = re.search(r'\[download\]\s+([\d.]+)%', line)
                         if match:
@@ -355,9 +367,8 @@ class YTDownloaderApp:
                             if eta_match: status += f" (ETA {eta_match.group(1)})"
                             
                             self.update_progress(percent, status)
-                            continue # Don't spam the log with every % update
+                            continue 
                             
-                    # Parse ffmpeg progress
                     if "frame=" in line and "time=" in line:
                         time_match = re.search(r'time=([\d:.]+)', line)
                         speed_match = re.search(r'speed=\s*([\d.]+x)', line)
@@ -366,7 +377,7 @@ class YTDownloaderApp:
                         self.update_status(status)
                         continue
                         
-                    self.log(line) # Log other important events
+                    self.log(line) 
                     
         if buffer.strip():
             self.log(buffer.strip())
