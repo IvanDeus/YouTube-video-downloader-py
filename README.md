@@ -1,4 +1,6 @@
-# YouTube-video-downloader-py 🎬 YouTube Video Downloader GUI
+# YouTube-video-downloader-py 
+![yt_downloader_gui.py](https://github.com/IvanDeus/YouTube-video-downloader-py/blob/main/yt-downloader.jpg)
+🎬 YouTube Video Downloader GUI
 
 A user-friendly, graphical desktop application for downloading and merging YouTube videos. Built with **Python** and **Tkinter**, this tool replaces the need for complex command-line interfaces by providing a visual format selector, real-time progress tracking, and automatic audio/video merging.
 
