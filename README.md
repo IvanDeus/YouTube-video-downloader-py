@@ -1,4 +1,4 @@
-#🎬 YouTube Video Downloader GUI
+# YouTube Video Downloader GUI 🎬 
 ![yt_downloader_gui.py](https://github.com/IvanDeus/YouTube-video-downloader-py/blob/main/yt-downloader.jpg)
 # YouTube-video-downloader-py
 
