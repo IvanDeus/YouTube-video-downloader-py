@@ -16,7 +16,7 @@ A user-friendly, graphical desktop application for downloading and merging YouTu
 - 📊 **Visual Format Selection**: Fetches and displays available video qualities (Resolution, FPS, File Size) in an easy-to-read, sortable table.
 - 🔄 **Smart Auto-Merging**: Intelligently detects if your selected video format already includes audio. If it doesn't, it automatically downloads the best available audio and merges them using FFmpeg.
 - 📈 **Real-Time Progress**: Live progress bar and status updates showing download speed, percentage, and ETA.
-- 🧹 **Auto-Cleanup**: Automatically deletes temporary intermediate files (`video_temp.*`, `audio_temp.*`) after a successful merge.
+- 🧹 **Auto-Cleanup**: Automatically deletes temporary intermediate files after a successful merge.
 - 🛑 **Graceful Exit**: Safely kills background `yt-dlp` or `ffmpeg` processes if you close the window mid-download.
 - 📂 **Custom Save Location**: Browse and choose exactly where you want your downloaded videos to be saved.
 
