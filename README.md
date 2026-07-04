@@ -18,7 +18,6 @@ A user-friendly, graphical desktop application for downloading and merging YouTu
 - 📈 **Real-Time Progress**: Live progress bar and status updates showing download speed, percentage, and ETA.
 - 🧹 **Auto-Cleanup**: Automatically deletes temporary intermediate files after a successful merge.
 - 🛑 **Graceful Exit**: Safely kills background `yt-dlp` or `ffmpeg` processes if you close the window mid-download.
-- 📂 **Custom Save Location**: Browse and choose exactly where you want your downloaded videos to be saved.
 
 ---
 
