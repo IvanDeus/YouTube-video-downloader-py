@@ -77,10 +77,10 @@ If you prefer, you can install `yt-dlp` and `ffmpeg` globally and add them to yo
    - *Note: The app automatically handles the logic of whether that format needs a separate audio download.*
 
 4. **Choose Save Location**:
-   - By default, it saves to the current directory. Click **Browse** to choose a specific folder.
+   - By default, it saves to the current directory.
 
 5. **Download & Merge**:
-   - Click the **Download & Merge** button.
+   - Click the **Download & Merge** button. Or **Download Audio Only**. 
    - Watch the real-time progress bar and log output. Once finished, a success popup will appear, and your final video will be ready!
 
 ---
