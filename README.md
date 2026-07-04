@@ -76,10 +76,7 @@ If you prefer, you can install `yt-dlp` and `ffmpeg` globally and add them to yo
    - Click on your desired resolution/quality in the table (e.g., `1080p`, `720p`).
    - *Note: The app automatically handles the logic of whether that format needs a separate audio download.*
 
-4. **Choose Save Location**:
-   - By default, it saves to the current directory.
-
-5. **Download & Merge**:
+4. **Download & Merge**:
    - Click the **Download & Merge** button. Or **Download Audio Only**. 
    - Watch the real-time progress bar and log output. Once finished, a success popup will appear, and your final video will be ready!
 
