@@ -7,8 +7,10 @@ import json
 import re
 import os
 import threading
-import sys
 import glob
+import shutil
+import string
+import random
 
 class YTDownloaderApp:
     def __init__(self, root):
@@ -36,6 +38,20 @@ class YTDownloaderApp:
             if not os.path.exists(self.ffmpeg_path):
                 self.ffmpeg_path = "ffmpeg" # Fallback to PATH
                 
+        # NEW: Resolve executables in system PATH to absolute paths
+        # This is crucial for yt-dlp's --ffmpeg-location which expects a valid path
+        for exe_attr in ['ytdlp_path', 'ffmpeg_path']:
+            path = getattr(self, exe_attr)
+            if not os.path.isabs(path) and not os.path.exists(path):
+                resolved = shutil.which(path)
+                if resolved:
+                    setattr(self, exe_attr, resolved)
+                else:
+                    # Fallback to non-.exe name for Linux/Mac
+                    fallback_name = "yt-dlp" if "ytdlp" in exe_attr else "ffmpeg"
+                    resolved = shutil.which(fallback_name)
+                    if resolved: setattr(self, exe_attr, resolved)
+                    
         self.formats_data = {}
         self.setup_ui()
         
@@ -55,6 +71,9 @@ class YTDownloaderApp:
         ttk.Label(url_frame, text="YouTube URL:").pack(side=tk.LEFT)
         self.url_entry = ttk.Entry(url_frame, width=60)
         self.url_entry.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        
+        # NEW: Disable download buttons if the user types a new URL
+        self.url_entry.bind("<KeyRelease>", lambda e: self.on_url_change())
         
         self.fetch_btn = ttk.Button(url_frame, text="Fetch Formats", command=self.fetch_formats)
         self.fetch_btn.pack(side=tk.LEFT)
@@ -107,9 +126,15 @@ class YTDownloaderApp:
         self.progress = ttk.Progressbar(main_frame, orient=tk.HORIZONTAL, length=100, mode='determinate')
         self.progress.pack(fill=tk.X, pady=(0, 10))
         
-        # --- Action Button ---
-        self.download_btn = ttk.Button(main_frame, text="Download & Merge", command=self.start_download, state=tk.DISABLED)
-        self.download_btn.pack(pady=(0, 10))
+        # --- Action Buttons ---
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=(0, 10))
+        
+        self.download_btn = ttk.Button(btn_frame, text="Download & Merge", command=self.start_download, state=tk.DISABLED)
+        self.download_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.audio_btn = ttk.Button(btn_frame, text="Download Audio Only", command=self.start_audio_download, state=tk.DISABLED)
+        self.audio_btn.pack(side=tk.LEFT, padx=5)
         
         # --- Log Area ---
         log_frame = ttk.LabelFrame(main_frame, text="Log", padding=5)
@@ -117,6 +142,11 @@ class YTDownloaderApp:
         
         self.log_text = scrolledtext.ScrolledText(log_frame, height=10, state=tk.DISABLED, wrap=tk.WORD, font=("Consolas", 9))
         self.log_text.pack(fill=tk.BOTH, expand=True)
+
+    def on_url_change(self):
+        """Disables download buttons when URL is changed to prevent stale format selection."""
+        self.download_btn.config(state=tk.DISABLED)
+        self.audio_btn.config(state=tk.DISABLED)
 
     def on_closing(self):
         if self.current_process and self.current_process.poll() is None:
@@ -131,27 +161,37 @@ class YTDownloaderApp:
 
     def log(self, message):
         def _update():
-            self.log_text.config(state=tk.NORMAL)
-            self.log_text.insert(tk.END, message + "\n")
-            self.log_text.see(tk.END)
-            self.log_text.config(state=tk.DISABLED)
+            try:
+                self.log_text.config(state=tk.NORMAL)
+                self.log_text.insert(tk.END, message + "\n")
+                self.log_text.see(tk.END)
+                self.log_text.config(state=tk.DISABLED)
+            except tk.TclError:
+                pass # Window was closed
         self.root.after(0, _update)
 
     def update_progress(self, percent, status_text=""):
         def _update():
-            self.progress['value'] = percent
-            if status_text:
-                self.status_var.set(status_text)
+            try:
+                self.progress['value'] = percent
+                if status_text:
+                    self.status_var.set(status_text)
+            except tk.TclError:
+                pass
         self.root.after(0, _update)
         
     def update_status(self, text):
-        self.root.after(0, lambda: self.status_var.set(text))
+        def _update():
+            try:
+                self.status_var.set(text)
+            except tk.TclError:
+                pass
+        self.root.after(0, _update)
 
     def sanitize_filename(self, filename):
         """Removes illegal characters and truncates the filename for safety."""
-        # Remove characters that are invalid in Windows/Linux/macOS filenames
-        clean_name = re.sub(r'[\\/*?:"<>|]', "", filename).strip()
-        # Truncate to 100 characters to prevent path length issues
+        # FIXED: Added % to prevent yt-dlp template parsing errors
+        clean_name = re.sub(r'[\\/*?:"<>|%]', "", filename).strip()
         clean_name = clean_name[:100] if clean_name else "YouTube_Video"
         return clean_name
 
@@ -177,7 +217,6 @@ class YTDownloaderApp:
 
                 data = json.loads(result.stdout)
                 
-                # --- EXTRACT TITLE HERE ---
                 self.video_title = data.get('title', 'YouTube_Video')
                 self.log(f"Video Title: {self.video_title}")
                 
@@ -220,6 +259,7 @@ class YTDownloaderApp:
             self.format_tree.insert("", tk.END, values=values)
             
         self.download_btn.config(state=tk.NORMAL)
+        self.audio_btn.config(state=tk.NORMAL)
         self.update_status(f"Found {len(formats)} formats. Select one to download.")
         self.log(f"Found {len(formats)} video formats.")
 
@@ -236,22 +276,20 @@ class YTDownloaderApp:
         url = self.url_entry.get().strip()
         out_dir = self.out_dir.get()
         
-        # --- USE SANITIZED TITLE FOR FILENAME ---
         safe_title = self.sanitize_filename(self.video_title)
         
-        video_path_template = os.path.join(out_dir, f"{safe_title}_video_temp.%(ext)s")
-        audio_path_template = os.path.join(out_dir, f"{safe_title}_audio_temp.%(ext)s")
-        final_path = os.path.join(out_dir, f"{safe_title}.mp4")
+        # --- FIX FOR FFMPEG NON-ASCII PATH ISSUES ---
+        # Create a temporary ASCII-only folder inside the current working directory.
+        # This prevents ffmpeg from failing when the final filename contains Cyrillic/special characters.
+        temp_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        temp_dir = os.path.join(os.getcwd(), f"ytdlp_{temp_id}")
+        os.makedirs(temp_dir, exist_ok=True)
         
-        # Clean up old temp files for this specific video
-        for p in glob.glob(os.path.join(out_dir, f"{safe_title}_video_temp.*")) + \
-                 glob.glob(os.path.join(out_dir, f"{safe_title}_audio_temp.*")) + \
-                 [final_path]:
-            if os.path.exists(p):
-                try: os.remove(p)
-                except: pass
-
+        # Template for yt-dlp output in the temp directory
+        temp_final_template = os.path.join(temp_dir, "merged_video.%(ext)s")
+        
         self.download_btn.config(state=tk.DISABLED)
+        self.audio_btn.config(state=tk.DISABLED)
         self.fetch_btn.config(state=tk.DISABLED)
         self.progress['value'] = 0
         
@@ -262,49 +300,46 @@ class YTDownloaderApp:
                 if has_audio:
                     self.update_status("Downloading video with audio...")
                     self.log(f"Selected format {format_id} has audio. Downloading directly...")
-                    # Added --merge-output-format mp4 to ensure it saves as .mp4
-                    cmd = [self.ytdlp_path, "-f", format_id, "-o", final_path, "--merge-output-format", "mp4", "--no-warnings", url]
+                    cmd = [self.ytdlp_path, "-f", format_id, "-o", temp_final_template, "--no-warnings", url]
                     self.run_command(cmd, is_download=True)
                 else:
-                    self.update_status("Downloading video...")
-                    self.log(f"Downloading video (format {format_id})...")
-                    cmd_v = [self.ytdlp_path, "-f", format_id, "-o", video_path_template, "--no-warnings", url]
-                    self.run_command(cmd_v, is_download=True)
+                    self.update_status("Downloading and merging video + audio...")
+                    self.log(f"Downloading video (format {format_id}) and best available audio...")
                     
-                    video_files = glob.glob(os.path.join(out_dir, f"{safe_title}_video_temp.*"))
-                    if not video_files: raise Exception("Video download failed, file not found.")
-                    video_path = video_files[0]
-                    
-                    self.update_status("Downloading audio...")
-                    self.progress['value'] = 0 
-                    self.log("Downloading audio (format 140/bestaudio)...")
-                    cmd_a = [self.ytdlp_path, "-f", "140/bestaudio", "-o", audio_path_template, "--no-warnings", url]
-                    self.run_command(cmd_a, is_download=True)
-                    
-                    audio_files = glob.glob(os.path.join(out_dir, f"{safe_title}_audio_temp.*"))
-                    if not audio_files: raise Exception("Audio download failed, file not found.")
-                    audio_path = audio_files[0]
-                    
-                    self.update_status("Merging video and audio...")
-                    self.progress.config(mode='indeterminate')
-                    self.progress.start(10)
-                    self.log("Merging video and audio...")
-                    cmd_merge = [
-                        self.ffmpeg_path, "-i", video_path, "-i", audio_path,
-                        "-c:v", "copy", "-c:a", "aac", "-strict", "experimental",
-                        "-y", final_path
+                    # FIXED: Let yt-dlp handle the merging automatically using --ffmpeg-location
+                    cmd = [
+                        self.ytdlp_path, 
+                        "-f", f"{format_id}+ba/b", 
+                        "-o", temp_final_template,
+                        "--ffmpeg-location", self.ffmpeg_path,
+                        "--no-warnings", 
+                        url
                     ]
-                    self.run_command(cmd_merge, is_download=False)
+                    self.run_command(cmd, is_download=True)
                     
-                    self.progress.stop()
-                    self.progress.config(mode='determinate')
-                    self.progress['value'] = 100
+                # After successful download/merge, find the final file in the temp directory
+                possible_final_files = glob.glob(os.path.join(temp_dir, "merged_video.*"))
+                # Filter out partial downloads (e.g., merged_video.f136.mp4)
+                final_files = [f for f in possible_final_files if re.match(r'merged_video\.\w+$', os.path.basename(f))]
+                
+                if final_files:
+                    downloaded_file = final_files[0]
+                    ext = os.path.splitext(downloaded_file)[1]
+                    final_path = os.path.join(out_dir, f"{safe_title}{ext}")
                     
+                    # Clean up old final file if it exists
                     if os.path.exists(final_path):
-                        for p in [video_path, audio_path]:
-                            try: os.remove(p)
-                            except: pass
-                        self.log("Temporary files cleaned up.")
+                        try: os.remove(final_path)
+                        except: pass
+                        
+                    # Move the file to the final destination (Python handles Unicode paths perfectly)
+                    shutil.move(downloaded_file, final_path)
+                    self.log(f"Successfully moved file to: {final_path}")
+                else:
+                    raise Exception("Download/Merge failed or final file not found. Check log for errors.")
+                
+                self.progress['value'] = 100
+                self.log("Temporary files cleaned up automatically.")
                 
                 self.log(f"Success! Saved to: {final_path}")
                 self.update_status("Completed!")
@@ -315,9 +350,68 @@ class YTDownloaderApp:
                 self.update_status("Error occurred.")
                 self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
             finally:
+                # Clean up the temporary directory
+                try:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                except:
+                    pass
                 self.root.after(0, self.reset_ui)
 
         threading.Thread(target=run_download, daemon=True).start()
+
+    def start_audio_download(self):
+        url = self.url_entry.get().strip()
+        out_dir = self.out_dir.get()
+        
+        if not url:
+            messagebox.showwarning("Input Error", "Please enter a YouTube URL.")
+            return
+
+        safe_title = self.sanitize_filename(self.video_title)
+        audio_final_path = os.path.join(out_dir, f"{safe_title}_audio.%(ext)s")
+        
+        for p in glob.glob(os.path.join(out_dir, f"{safe_title}_audio.*")):
+            if os.path.exists(p):
+                try: os.remove(p)
+                except: pass
+
+        self.download_btn.config(state=tk.DISABLED)
+        self.audio_btn.config(state=tk.DISABLED)
+        self.fetch_btn.config(state=tk.DISABLED)
+        self.progress['value'] = 0
+        
+        def run_audio_download():
+            try:
+                self.update_status("Downloading best audio...")
+                self.log("Extracting best audio track...")
+                
+                cmd = [
+                    self.ytdlp_path, 
+                    "-f", "bestaudio", 
+                    "-o", audio_final_path, 
+                    "--no-warnings", 
+                    url
+                ]
+                self.run_command(cmd, is_download=True)
+                
+                actual_files = glob.glob(os.path.join(out_dir, f"{safe_title}_audio.*"))
+                if actual_files:
+                    final_file = actual_files[0]
+                    self.log(f"Success! Saved to: {final_file}")
+                    self.root.after(0, lambda: messagebox.showinfo("Success", f"Audio download completed!\nSaved to:\n{final_file}"))
+                else:
+                    self.log("Warning: Download finished, but couldn't locate the final file.")
+                    
+                self.update_status("Completed!")
+                
+            except Exception as e:
+                self.log(f"Error: {str(e)}")
+                self.update_status("Error occurred.")
+                self.root.after(0, lambda: messagebox.showerror("Error", str(e)))
+            finally:
+                self.root.after(0, self.reset_ui)
+
+        threading.Thread(target=run_audio_download, daemon=True).start()
 
     def run_command(self, cmd, is_download=False):
         self.log(f"Executing: {' '.join(cmd)}")
@@ -333,12 +427,13 @@ class YTDownloaderApp:
         buffer = ""
         while True:
             try:
-                chunk = os.read(process.stdout.fileno(), 4096)
+                # FIXED: Pythonic stream reading
+                chunk = process.stdout.read(4096)
                 if not chunk:
                     if process.poll() is not None: break
                     continue
                 buffer += chunk.decode('utf-8', errors='replace')
-            except OSError:
+            except (OSError, ValueError):
                 break
                 
             while '\r' in buffer or '\n' in buffer:
@@ -389,6 +484,7 @@ class YTDownloaderApp:
 
     def reset_ui(self):
         self.download_btn.config(state=tk.NORMAL)
+        self.audio_btn.config(state=tk.NORMAL)
         self.fetch_btn.config(state=tk.NORMAL)
 
 if __name__ == "__main__":
