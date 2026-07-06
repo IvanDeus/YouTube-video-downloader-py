@@ -4,7 +4,7 @@
 
 A user-friendly, graphical desktop application for downloading and merging YouTube videos. Built with **Python** and **Tkinter**, this tool replaces the need for complex command-line interfaces by providing a visual format selector, real-time progress tracking, and automatic audio/video merging.
 
-![Python Version](https://img.shields.io/badge/python-3.7+-blue.svg)
+![Python Version](https://img.shields.io/badge/python-3.14+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-windows-brightgreen)
 
